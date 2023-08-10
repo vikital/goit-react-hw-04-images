@@ -1,60 +1,41 @@
-import React, { Component } from 'react';
+import { useState, useEffect } from 'react';
 import { ToastContainer, Slide, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import axios from 'axios';
 import { AppDiv } from './App.styled';
 import SearchBar from './Searchbar/Searchbar';
 import ImageGallery from './ImageGallery/ImageGallery';
 import Loader from './Loader/Loader';
 import Button from './Button/Button';
 import Modal from './Modal/Modal';
+import { fetchImages } from './services/services-api';
 
-class App extends Component {
-  state = {
-    query: '',
-    images: [],
-    page: 1,
-    error: null,
-    isLoading: false,
-    isLastPage: false,
-    selectedImage: null,
-    showModal: false,
-  };
+const App = () => {
+  const [query, setQuery] = useState('');
+  const [images, setImages] = useState([]);
+  const [page, setPage] = useState(1);
+  const [error, setError] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [showModal, setShowModal] = useState(false);
+  const [showButton, setShowButton] = useState(false);
+  const [total, setTotal] = useState(1);
 
-  componentDidUpdate(_prevProps, prevState) {
-    const { query } = this.state;
+  useEffect(() => {
+    if (!query) return;
+    async function getImage() {
+      try {
+        setIsLoading(true);
+        setShowButton(true);
+        const responseImage = await fetchImages(query, page);
 
-    if (prevState.query !== query) {
-      this.setState({ images: [], page: 1, isLastPage: false }, () => {
-        this.fetchImages();
-      });
-    }
-  }
-
-  fetchImages = () => {
-    const { query, page } = this.state;
-
-    const API_KEY = '37421365-508677d6bf0e4f2b0f58d3593';
-
-    this.setState({ isLoading: true });
-
-    axios
-      .get(
-        `https://pixabay.com/api/?q=${query}&page=${page}&key=${API_KEY}&image_type=photo&orientation=horizontal&per_page=12`
-      )
-      .then(response => {
-        const { hits, totalHits } = response.data;
-
-        if (hits.length === 0) {
-          return toast(
-            `Sorry, there are no images matching your search query.`,
-            {
-              position: toast.POSITION.TOP_RIGHT,
-            }
-          );
+        if (!responseImage.hits.length) {
+          toast(`Sorry, there are no images matching your search query.`, {
+            position: toast.POSITION.TOP_RIGHT,
+          });
+          return setQuery('');
         }
 
-        const transformHits = hits.map(
+        const transformHits = responseImage.hits.map(
           ({ id, tags, webformatURL, largeImageURL }) => ({
             id,
             tags,
@@ -63,71 +44,62 @@ class App extends Component {
           })
         );
 
-        this.setState(prevState => ({
-          images: [...prevState.images, ...transformHits],
-          page: prevState.page + 1,
-          isLastPage:
-            prevState.images.length + transformHits.length >= totalHits,
-        }));
-      })
-      .catch(error => {
-        this.setState({ error: error.message });
-      })
-      .finally(() => {
-        this.setState({ isLoading: false });
-      });
-  };
+        setImages(prevImages => [...prevImages, ...transformHits]);
+        setTotal(responseImage.total);
+      } catch (error) {
+        setError(error.message);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    getImage();
+  }, [query, page]);
 
-  handleSearchSubmit = query => {
-    const { query: stateQuery } = this.state;
-    if (stateQuery === query) {
+  const handleSearchSubmit = newQuery => {
+    if (query === newQuery) {
       return;
     }
-    this.setState({
-      query,
-      page: 1,
-      images: [],
-      error: null,
-      isLastPage: false,
-    });
+    setQuery(newQuery);
+    setPage(1);
+    setImages([]);
+    setError(null);
+    setIsLoading(false);
+    setTotal(1);
   };
 
-  handleImageClick = image => {
-    this.setState({ selectedImage: image, showModal: true });
-    document.body.styled.overflow = 'hidden';
+  const handleImageClick = image => {
+    setSelectedImage(image);
+    setShowModal(true);
   };
 
-  handleModalClose = () => {
-    this.setState({ selectedImage: null, showModal: false });
-    document.body.style.overflow = 'auto';
+  const handleModalClose = () => {
+    setSelectedImage(null);
+    setShowModal(false);
   };
 
-  render() {
-    const { images, error, isLoading, isLastPage, selectedImage, showModal } =
-      this.state;
+  const loadMoreBtn = () => {
+    setPage(prevPage => prevPage + 1);
+  };
 
-    return (
-      <AppDiv>
-        <ToastContainer autoClose={3000} transition={Slide} />
+  return (
+    <AppDiv>
+      <ToastContainer autoClose={3000} transition={Slide} />
 
-        <SearchBar onSubmit={this.handleSearchSubmit} />
+      <SearchBar onSubmit={handleSearchSubmit} />
 
-        {error && <p>Error: {error}</p>}
+      {error && <p>Error: {error}</p>}
 
-        <ImageGallery images={images} onItemClick={this.handleImageClick} />
+      <ImageGallery images={images} onItemClick={handleImageClick} />
 
-        {isLoading && <Loader />}
+      {isLoading && <Loader />}
 
-        {!isLoading && images.length > 0 && !isLastPage && (
-          <Button onClick={this.fetchImages} />
-        )}
+      {!isLoading && total / 12 > page && showButton && (
+        <Button onClick={loadMoreBtn} />
+      )}
 
-        {showModal && (
-          <Modal image={selectedImage} onClose={this.handleModalClose} />
-        )}
-      </AppDiv>
-    );
-  }
-}
+      {showModal && <Modal image={selectedImage} onClose={handleModalClose} />}
+    </AppDiv>
+  );
+};
 
 export default App;
